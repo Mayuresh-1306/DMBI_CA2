@@ -2,7 +2,7 @@ services:
   - type: web
     name: ipl-valuation-react-frontend
     env: static
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --legacy-peer-deps && npm run build
     staticPublishPath: ./dist
     routes:
       - type: rewrite
