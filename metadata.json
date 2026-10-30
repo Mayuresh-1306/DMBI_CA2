@@ -1,0 +1,6 @@
+{
+  "name": "IPL Auction Valuation & Bid Ceiling Analytics",
+  "description": "Random Forest Leave-One-Group-Out CV player valuation workbench, CA2 report visualizations generator, and bid ceiling recommender for IPL auction datasets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

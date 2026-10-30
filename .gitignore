@@ -1,0 +1,10 @@
+# .gitignore
+node_modules/
+dist/
+.DS_Store
+.env
+.playwright-cli/
+.aistudio/
+*.pyc
+__pycache__/
+.ipynb_checkpoints/
