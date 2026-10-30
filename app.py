@@ -1,16 +1,8 @@
 """
-Single-File Streamlit Dashboard: IPL Auction Valuation & Bid Ceiling Recommender
---------------------------------------------------------------------------------
-Loads 'valuation_results.csv' from Step 5 (Random Forest Valuation Model with LeaveOneGroupOut CV)
-and provides:
-1. Sidebar filters for 'dominant_archetype', 'year', and outlier regime.
-2. Main interactive dataframe highlighting statistical outliers in semantic Green (Undervalued
-   bargain outliers, z < 0) and Red (Overvalued premium outliers, z > 0).
-3. Interactive Bid Ceiling Recommender for any selected player using their predicted_ln_price
-   and z_score.
-
-Run with:
-    streamlit run app.py
+Single-File Streamlit Dashboard (app.py)
+----------------------------------------
+Runs a clean Streamlit dashboard loading 'valuation_results.csv' with optimized
+sidebar controls (selectbox & radio) to prevent multiselect overflow.
 """
 
 import math
@@ -18,9 +10,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# ---------------------------------------------------------------------------
-# Page Configuration
-# ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="IPL Auction Valuation & Bid Ceiling Analytics",
     page_icon="🏏",
@@ -31,24 +20,18 @@ st.set_page_config(
 DEFAULT_PURSE_CR = 120.0
 
 
-# ---------------------------------------------------------------------------
-# Data Loading & Preprocessing
-# ---------------------------------------------------------------------------
 @st.cache_data
 def load_valuation_data(csv_path: str = "valuation_results.csv") -> pd.DataFrame:
     df = pd.read_csv(csv_path)
 
-    # Derive predicted fair price in ₹ Crores
     if "sold_price_cr" in df.columns and "gap_percentage" in df.columns:
         df["predicted_price_cr"] = df["sold_price_cr"] / (1.0 + df["gap_percentage"] / 100.0)
     else:
         df["predicted_price_cr"] = DEFAULT_PURSE_CR * np.exp(df["predicted_ln_price"])
 
-    # Compute residual if not present
     if "residual" not in df.columns and "ln_price_to_purse" in df.columns:
         df["residual"] = df["ln_price_to_purse"] - df["predicted_ln_price"]
 
-    # Add human-readable outlier status
     def classify_status(row) -> str:
         if int(row["is_outlier"]) == 1:
             return "Undervalued Outlier" if row["z_score"] < 0 else "Overvalued Outlier"
@@ -63,16 +46,11 @@ def compute_bid_ceiling(
     risk_posture: str = "Balanced (Standard Franchise Risk)",
     purse_cr: float = DEFAULT_PURSE_CR,
 ) -> dict:
-    """
-    Computes Conservative Bid, Recommended Bid Ceiling, and Hard Walk-Away Price
-    from predicted_ln_price and z_score.
-    """
     fair_price_cr = float(row["predicted_price_cr"]) * (purse_cr / DEFAULT_PURSE_CR)
     pred_ln = float(row["predicted_ln_price"])
     z_val = float(row["z_score"])
     residual = float(row.get("residual", 0.0))
 
-    # Estimate log-space residual standard deviation
     sigma_log = min(max(abs(residual / z_val), 0.35), 0.95) if abs(z_val) > 0.05 else 0.65
 
     posture_map = {
@@ -99,40 +77,41 @@ def compute_bid_ceiling(
         "conservative_cr": round(conservative_cr, 2),
         "ceiling_cr": round(ceiling_cr, 2),
         "walk_away_cr": round(walk_away_cr, 2),
-        "sigma_log": round(sigma_log, 3),
         "ceiling_purse_pct": round((ceiling_cr / purse_cr) * 100.0, 2),
     }
 
 
-# ---------------------------------------------------------------------------
-# Load Dataset
-# ---------------------------------------------------------------------------
 try:
     df_all = load_valuation_data("valuation_results.csv")
 except FileNotFoundError:
-    st.error("File 'valuation_results.csv' not found in working directory. Please place 'valuation_results.csv' next to app.py.")
+    st.error("File 'valuation_results.csv' not found. Please place 'valuation_results.csv' next to app.py.")
     st.stop()
 
 
 # ---------------------------------------------------------------------------
-# Sidebar Filters
+# Sidebar Filters (Using clean selectbox & radio to prevent tag overflow)
 # ---------------------------------------------------------------------------
 st.sidebar.header("Auction Filter Controls")
-st.sidebar.caption("Step 5: Random Forest Leave-One-Group-Out CV (2022–2024)")
+st.sidebar.caption("Step 5: Random Forest LOGO-CV (2022–2024)")
 
 available_years = sorted(df_all["year"].unique().tolist())
 selected_years = st.sidebar.multiselect(
-    "Select Auction Year(s)",
+    "Filter by Year",
     options=available_years,
     default=available_years,
 )
 
 available_archetypes = sorted(df_all["dominant_archetype"].dropna().unique().tolist())
-selected_archetypes = st.sidebar.multiselect(
-    "Select Dominant Archetype(s)",
-    options=available_archetypes,
-    default=available_archetypes,
+archetype_choice = st.sidebar.selectbox(
+    "Filter by Dominant Archetype",
+    options=["All Archetypes"] + available_archetypes,
+    index=0,
 )
+
+if archetype_choice == "All Archetypes":
+    selected_archetypes = available_archetypes
+else:
+    selected_archetypes = [archetype_choice]
 
 outlier_filter = st.sidebar.radio(
     "Outlier Display Filter",
@@ -153,7 +132,6 @@ franchise_purse = st.sidebar.slider(
     step=5.0,
 )
 
-# Apply filters
 filtered_df = df_all[
     (df_all["year"].isin(selected_years))
     & (df_all["dominant_archetype"].isin(selected_archetypes))
@@ -178,16 +156,13 @@ st.markdown(
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 kpi1.metric("Filtered Player-Seasons", f"{len(filtered_df)}")
-kpi2.metric(
-    "Statistical Outliers (|z| ≥ 1.96)",
-    f"{int((filtered_df['is_outlier'] == 1).sum())}",
-)
+kpi2.metric("Statistical Outliers (|z| ≥ 1.96)", f"{int((filtered_df['is_outlier'] == 1).sum())}")
 kpi3.metric(
-    "Undervalued Bargains (Outlier z < 0)",
+    "Undervalued Bargains (Green)",
     f"{int(((filtered_df['is_outlier'] == 1) & (filtered_df['z_score'] < 0)).sum())}",
 )
 kpi4.metric(
-    "Overvalued Premiums (Outlier z > 0)",
+    "Overvalued Premiums (Red)",
     f"{int(((filtered_df['is_outlier'] == 1) & (filtered_df['z_score'] > 0)).sum())}",
 )
 
@@ -219,7 +194,6 @@ display_cols = [c for c in display_cols if c in filtered_df.columns]
 
 
 def highlight_outliers(row: pd.Series):
-    """Highlights undervalued outliers in green and overvalued outliers in red."""
     if int(row.get("is_outlier", 0)) == 1:
         if float(row.get("z_score", 0.0)) < 0:
             return ["background-color: rgba(22, 163, 74, 0.18); color: #14532D; font-weight: 600;"] * len(row)
@@ -315,7 +289,6 @@ else:
         delta_color="inverse" if player_row["sold_price_cr"] > rec["ceiling_cr"] else "normal",
     )
 
-    # Diagnostic interpretation box
     z_val = float(player_row["z_score"])
     is_out = int(player_row["is_outlier"]) == 1
     if is_out and z_val < 0:
